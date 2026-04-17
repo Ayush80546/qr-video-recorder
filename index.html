@@ -13,6 +13,23 @@
   <button onclick="startRecording()">Start</button>
   <button onclick="stopRecording()">Stop</button>
 
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "qr-video-recorder.firebaseapp.com",
+    projectId: "qr-video-recorder",
+    storageBucket: "qr-video-recorder.appspot.com",
+    messagingSenderId: "413516749371",
+    appId: "YOUR_APP_ID"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const storage = firebase.storage();
+</script>
+  
   <script>
     let recorder, chunks = [], stream;
     let lat = null, lng = null;
