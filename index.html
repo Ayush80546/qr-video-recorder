@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>QR Video Recorder</title>
+</head>
+<body>
+  <h2>QR Video Recorder</h2>
+
+  <p id="site"></p>
+  <video id="preview" autoplay muted style="width:300px;"></video>
+  <br><br>
+
+  <button onclick="startRecording()">Start</button>
+  <button onclick="stopRecording()">Stop</button>
+
+  <script>
+    let recorder, chunks = [], stream;
+    let lat = null, lng = null;
+
+    // Get QR param
+    const params = new URLSearchParams(window.location.search);
+    const siteId = params.get("site_id");
+    document.getElementById("site").innerText = "Site: " + siteId;
+
+    // Get location
+    navigator.geolocation.getCurrentPosition(pos => {
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+      console.log("Location:", lat, lng);
+    });
+
+    async function startRecording() {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById("preview").srcObject = stream;
+
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => chunks.push(e.data);
+
+      recorder.start();
+    }
+
+    function stopRecording() {
+      recorder.stop();
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+
+        // Download video
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `video_${Date.now()}.webm`;
+        a.click();
+
+        console.log("Geo:", lat, lng);
+      };
+    }
+  </script>
+</body>
+</html>
