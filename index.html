@@ -36,12 +36,25 @@
       cursor: pointer;
     }
 
-    .start { background: #22c55e; color: white; }
-    .stop { background: #ef4444; color: white; }
+    .start { background: #22c55e; }
+    .stop { background: #ef4444; }
 
-    #status {
-      margin-top: 15px;
-      font-size: 14px;
+    #status { margin-top: 10px; }
+    #progressBar {
+      width: 100%;
+      max-width: 350px;
+      height: 10px;
+      background: #333;
+      border-radius: 10px;
+      margin: 10px auto;
+      overflow: hidden;
+      display: none;
+    }
+
+    #progress {
+      height: 100%;
+      width: 0%;
+      background: #22c55e;
     }
 
     #linkBox {
@@ -56,15 +69,14 @@
 
 <input type="text" id="username" placeholder="Enter your name" />
 
-<video id="preview" autoplay muted playsinline></video>
-
-<br>
+<video id="preview" autoplay muted playsinline></video><br>
 
 <button class="start" onclick="startRecording()">Start</button>
 <button class="stop" onclick="stopRecording()">Stop</button>
 
-<p id="status"></p>
+<div id="progressBar"><div id="progress"></div></div>
 
+<p id="status"></p>
 <div id="linkBox"></div>
 
 <script>
@@ -72,16 +84,37 @@ let mediaRecorder;
 let chunks = [];
 let stream;
 
-// 🔹 CHANGE THESE
-const CLOUD_NAME = "dednueey1";
-const UPLOAD_PRESET = "qr_upload";
+const CLOUD_NAME = "YOUR_CLOUD_NAME";
+const UPLOAD_PRESET = "YOUR_UPLOAD_PRESET";
+const MAX_USERS = 5;
+
+// ⚠️ Replace with a static count for now OR use backend later
+let currentUploads = 0;
+
+// 🔹 LIMIT CHECK (basic client-side)
+function checkLimit() {
+  if (localStorage.getItem("uploaded") === "yes") {
+    alert("You already submitted.");
+    return false;
+  }
+
+  if (currentUploads >= MAX_USERS) {
+    alert("Limit reached (5 users).");
+    return false;
+  }
+
+  return true;
+}
 
 async function startRecording() {
   const name = document.getElementById("username").value;
+
   if (!name) {
-    alert("Please enter your name");
+    alert("Enter name first");
     return;
   }
+
+  if (!checkLimit()) return;
 
   stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   document.getElementById("preview").srcObject = stream;
@@ -97,9 +130,8 @@ async function startRecording() {
   mediaRecorder.onstop = uploadVideo;
 
   mediaRecorder.start();
-  document.getElementById("status").innerText = "🔴 Recording... (Max 2 min)";
+  document.getElementById("status").innerText = "🔴 Recording...";
 
-  // Auto stop after 2 min
   setTimeout(() => {
     if (mediaRecorder.state === "recording") {
       mediaRecorder.stop();
@@ -113,8 +145,9 @@ function stopRecording() {
   }
 }
 
-async function uploadVideo() {
-  document.getElementById("status").innerText = "⏳ Uploading...";
+function uploadVideo() {
+  document.getElementById("status").innerText = "Uploading...";
+  document.getElementById("progressBar").style.display = "block";
 
   const blob = new Blob(chunks, { type: "video/webm" });
 
@@ -122,34 +155,42 @@ async function uploadVideo() {
   formData.append("file", blob);
   formData.append("upload_preset", UPLOAD_PRESET);
 
-  try {
-    let res = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`,
-      {
-        method: "POST",
-        body: formData
-      }
-    );
+  let xhr = new XMLHttpRequest();
 
-    let data = await res.json();
+  xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`);
+
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) {
+      let percent = (e.loaded / e.total) * 100;
+      document.getElementById("progress").style.width = percent + "%";
+    }
+  };
+
+  xhr.onload = function() {
+    let data = JSON.parse(xhr.responseText);
 
     if (data.secure_url) {
-      document.getElementById("status").innerText = "✅ Upload Successful";
+      currentUploads++;
+      localStorage.setItem("uploaded", "yes");
+
+      document.getElementById("status").innerText = "✅ Uploaded";
 
       document.getElementById("linkBox").innerHTML = `
-        <p>🎉 Your video is uploaded:</p>
+        <p>🎉 Video uploaded:</p>
         <a href="${data.secure_url}" target="_blank">${data.secure_url}</a>
         <br><br>
         <video controls src="${data.secure_url}"></video>
       `;
     } else {
-      throw new Error("Upload failed");
+      document.getElementById("status").innerText = "❌ Upload failed";
     }
+  };
 
-  } catch (err) {
-    document.getElementById("status").innerText = "❌ Upload Failed";
-    console.error(err);
-  }
+  xhr.onerror = function() {
+    document.getElementById("status").innerText = "❌ Upload error";
+  };
+
+  xhr.send(formData);
 }
 </script>
 
