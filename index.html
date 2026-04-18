@@ -39,7 +39,6 @@
     .start { background: #22c55e; }
     .stop { background: #ef4444; }
 
-    #status { margin-top: 10px; }
     #progressBar {
       width: 100%;
       max-width: 350px;
@@ -57,10 +56,8 @@
       background: #22c55e;
     }
 
-    #linkBox {
-      margin-top: 15px;
-      word-break: break-all;
-    }
+    #status { margin-top: 10px; }
+    #linkBox { margin-top: 15px; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -83,27 +80,29 @@
 let mediaRecorder;
 let chunks = [];
 let stream;
+let userLocation = null;
 
 const CLOUD_NAME = "YOUR_CLOUD_NAME";
 const UPLOAD_PRESET = "YOUR_UPLOAD_PRESET";
-const MAX_USERS = 5;
 
-// ⚠️ Replace with a static count for now OR use backend later
-let currentUploads = 0;
-
-// 🔹 LIMIT CHECK (basic client-side)
-function checkLimit() {
-  if (localStorage.getItem("uploaded") === "yes") {
-    alert("You already submitted.");
-    return false;
-  }
-
-  if (currentUploads >= MAX_USERS) {
-    alert("Limit reached (5 users).");
-    return false;
-  }
-
-  return true;
+// 📍 Get Location
+function getLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject("Geolocation not supported");
+    } else {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+        },
+        err => reject(err),
+        { enableHighAccuracy: true }
+      );
+    }
+  });
 }
 
 async function startRecording() {
@@ -114,7 +113,14 @@ async function startRecording() {
     return;
   }
 
-  if (!checkLimit()) return;
+  document.getElementById("status").innerText = "📍 Getting location...";
+
+  try {
+    userLocation = await getLocation();
+  } catch (e) {
+    alert("Location permission denied");
+    return;
+  }
 
   stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   document.getElementById("preview").srcObject = stream;
@@ -130,6 +136,7 @@ async function startRecording() {
   mediaRecorder.onstop = uploadVideo;
 
   mediaRecorder.start();
+
   document.getElementById("status").innerText = "🔴 Recording...";
 
   setTimeout(() => {
@@ -155,8 +162,15 @@ function uploadVideo() {
   formData.append("file", blob);
   formData.append("upload_preset", UPLOAD_PRESET);
 
-  let xhr = new XMLHttpRequest();
+  // 📍 Attach location metadata
+  if (userLocation) {
+    formData.append(
+      "context",
+      `location=${userLocation.lat},${userLocation.lng}|name=${document.getElementById("username").value}`
+    );
+  }
 
+  let xhr = new XMLHttpRequest();
   xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`);
 
   xhr.upload.onprogress = function(e) {
@@ -170,15 +184,13 @@ function uploadVideo() {
     let data = JSON.parse(xhr.responseText);
 
     if (data.secure_url) {
-      currentUploads++;
-      localStorage.setItem("uploaded", "yes");
-
       document.getElementById("status").innerText = "✅ Uploaded";
 
       document.getElementById("linkBox").innerHTML = `
         <p>🎉 Video uploaded:</p>
         <a href="${data.secure_url}" target="_blank">${data.secure_url}</a>
         <br><br>
+        <p>📍 Location: ${userLocation.lat}, ${userLocation.lng}</p>
         <video controls src="${data.secure_url}"></video>
       `;
     } else {
