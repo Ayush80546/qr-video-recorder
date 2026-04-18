@@ -1,76 +1,157 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>QR Video Recorder</title>
+  <title>Video Recorder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial;
+      text-align: center;
+      background: #0f172a;
+      color: white;
+      padding: 20px;
+    }
+
+    video {
+      width: 100%;
+      max-width: 350px;
+      border-radius: 12px;
+      margin-top: 10px;
+    }
+
+    input {
+      padding: 10px;
+      width: 80%;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      border: none;
+    }
+
+    button {
+      padding: 12px 20px;
+      margin: 5px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .start { background: #22c55e; color: white; }
+    .stop { background: #ef4444; color: white; }
+
+    #status {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+
+    #linkBox {
+      margin-top: 15px;
+      word-break: break-all;
+    }
+  </style>
 </head>
 <body>
-  <h2>QR Video Recorder</h2>
 
-  <p id="site"></p>
-  <video id="preview" autoplay muted style="width:300px;"></video>
-  <br><br>
+<h2>🎥 Record Your Video</h2>
 
-  <button onclick="startRecording()">Start</button>
-  <button onclick="stopRecording()">Stop</button>
+<input type="text" id="username" placeholder="Enter your name" />
 
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<video id="preview" autoplay muted playsinline></video>
+
+<br>
+
+<button class="start" onclick="startRecording()">Start</button>
+<button class="stop" onclick="stopRecording()">Stop</button>
+
+<p id="status"></p>
+
+<div id="linkBox"></div>
 
 <script>
-  const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "qr-video-recorder.firebaseapp.com",
-    projectId: "qr-video-recorder",
-    storageBucket: "qr-video-recorder.appspot.com",
-    messagingSenderId: "413516749371",
-    appId: "YOUR_APP_ID"
-  };
+let mediaRecorder;
+let chunks = [];
+let stream;
 
-  firebase.initializeApp(firebaseConfig);
-  const storage = firebase.storage();
+// 🔹 CHANGE THESE
+const CLOUD_NAME = "YOUR_CLOUD_NAME";
+const UPLOAD_PRESET = "YOUR_UPLOAD_PRESET";
+
+async function startRecording() {
+  const name = document.getElementById("username").value;
+  if (!name) {
+    alert("Please enter your name");
+    return;
+  }
+
+  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  document.getElementById("preview").srcObject = stream;
+
+  mediaRecorder = new MediaRecorder(stream, {
+    mimeType: "video/webm;codecs=vp8",
+    videoBitsPerSecond: 500000
+  });
+
+  chunks = [];
+
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.onstop = uploadVideo;
+
+  mediaRecorder.start();
+  document.getElementById("status").innerText = "🔴 Recording... (Max 2 min)";
+
+  // Auto stop after 2 min
+  setTimeout(() => {
+    if (mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
+  }, 120000);
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+}
+
+async function uploadVideo() {
+  document.getElementById("status").innerText = "⏳ Uploading...";
+
+  const blob = new Blob(chunks, { type: "video/webm" });
+
+  let formData = new FormData();
+  formData.append("file", blob);
+  formData.append("upload_preset", UPLOAD_PRESET);
+
+  try {
+    let res = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`,
+      {
+        method: "POST",
+        body: formData
+      }
+    );
+
+    let data = await res.json();
+
+    if (data.secure_url) {
+      document.getElementById("status").innerText = "✅ Upload Successful";
+
+      document.getElementById("linkBox").innerHTML = `
+        <p>🎉 Your video is uploaded:</p>
+        <a href="${data.secure_url}" target="_blank">${data.secure_url}</a>
+        <br><br>
+        <video controls src="${data.secure_url}"></video>
+      `;
+    } else {
+      throw new Error("Upload failed");
+    }
+
+  } catch (err) {
+    document.getElementById("status").innerText = "❌ Upload Failed";
+    console.error(err);
+  }
+}
 </script>
-  
-  <script>
-    let recorder, chunks = [], stream;
-    let lat = null, lng = null;
 
-    // Get QR param
-    const params = new URLSearchParams(window.location.search);
-    const siteId = params.get("site_id");
-    document.getElementById("site").innerText = "Site: " + siteId;
-
-    // Get location
-    navigator.geolocation.getCurrentPosition(pos => {
-      lat = pos.coords.latitude;
-      lng = pos.coords.longitude;
-      console.log("Location:", lat, lng);
-    });
-
-    async function startRecording() {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      document.getElementById("preview").srcObject = stream;
-
-      recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = e => chunks.push(e.data);
-
-      recorder.start();
-    }
-
-    function stopRecording() {
-      recorder.stop();
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-
-        // Download video
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `video_${Date.now()}.webm`;
-        a.click();
-
-        console.log("Geo:", lat, lng);
-      };
-    }
-  </script>
 </body>
 </html>
